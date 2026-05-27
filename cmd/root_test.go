@@ -101,12 +101,39 @@ func TestPickCommandPrintsOnlySelectedPathToStdout(t *testing.T) {
 		t.Fatalf("save fixture: %v", err)
 	}
 
-	stdout, stderr, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "2\n", "pick")
+	stdout, stderr, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "\x1b[B\r", "pick")
 	if err != nil {
 		t.Fatalf("pick command: %v", err)
 	}
 
 	if stdout != "/tmp/two\n" {
+		t.Fatalf("expected stdout to contain only selected path, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "Select project") {
+		t.Fatalf("expected prompt on stderr, got %q", stderr)
+	}
+	if strings.Contains(stderr, "Enter number") {
+		t.Fatalf("expected arrow-key prompt, got %q", stderr)
+	}
+}
+
+func TestPickCommandWithoutQueryPromptsForOnlyProject(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "projects.json")
+	store := config.Store{Path: storePath}
+	if err := store.Save(config.File{
+		Version: 1,
+		Projects: []config.Project{
+			{Name: "one", Path: "/tmp/one"},
+		},
+	}); err != nil {
+		t.Fatalf("save fixture: %v", err)
+	}
+
+	stdout, stderr, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "\r", "pick")
+	if err != nil {
+		t.Fatalf("pick command: %v", err)
+	}
+	if stdout != "/tmp/one\n" {
 		t.Fatalf("expected stdout to contain only selected path, got %q", stdout)
 	}
 	if !strings.Contains(stderr, "Select project") {
@@ -150,7 +177,7 @@ func TestPickCommandWithQueryUsesFilteredSelectorForMultipleMatches(t *testing.T
 		t.Fatalf("save fixture: %v", err)
 	}
 
-	stdout, stderr, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "2\n", "pick", "alpha")
+	stdout, stderr, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "\x1b[B\r", "pick", "alpha")
 	if err != nil {
 		t.Fatalf("pick command: %v", err)
 	}
@@ -163,6 +190,28 @@ func TestPickCommandWithQueryUsesFilteredSelectorForMultipleMatches(t *testing.T
 	}
 	if strings.Contains(stderr, "beta") {
 		t.Fatalf("expected filtered prompt to exclude beta, got %q", stderr)
+	}
+}
+
+func TestPickCommandCancelsWithoutStdout(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "projects.json")
+	store := config.Store{Path: storePath}
+	if err := store.Save(config.File{
+		Version: 1,
+		Projects: []config.Project{
+			{Name: "one", Path: "/tmp/one"},
+			{Name: "two", Path: "/tmp/two"},
+		},
+	}); err != nil {
+		t.Fatalf("save fixture: %v", err)
+	}
+
+	stdout, _, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "\x1b", "pick")
+	if err != nil {
+		t.Fatalf("pick command: %v", err)
+	}
+	if stdout != "" {
+		t.Fatalf("expected no stdout on cancel, got %q", stdout)
 	}
 }
 
@@ -216,7 +265,7 @@ func TestOpenCodeCommandRunsWithSelectedProjectPath(t *testing.T) {
 			return nil
 		},
 	}
-	stdout, _, err := executeTestCommand(t, options, "1\n", "oc")
+	stdout, _, err := executeTestCommand(t, options, "\r", "oc")
 	if err != nil {
 		t.Fatalf("oc command: %v", err)
 	}

@@ -151,11 +151,11 @@ func TestSearchTrimsQuery(t *testing.T) {
 	}
 }
 
-func TestSelectReturnsOnlyProjectWithoutPrompt(t *testing.T) {
+func TestSelectPromptsForOnlyProject(t *testing.T) {
 	projects := []config.Project{{Name: "only", Path: "/tmp/only"}}
 	var prompt bytes.Buffer
 
-	got, ok, err := Select(projects, strings.NewReader(""), &prompt)
+	got, ok, err := Select(projects, strings.NewReader("\r"), &prompt)
 	if err != nil {
 		t.Fatalf("select project: %v", err)
 	}
@@ -166,33 +166,36 @@ func TestSelectReturnsOnlyProjectWithoutPrompt(t *testing.T) {
 	if got != projects[0] {
 		t.Fatalf("expected %#v, got %#v", projects[0], got)
 	}
-	if prompt.Len() != 0 {
-		t.Fatalf("expected no prompt, got %q", prompt.String())
+	if !strings.Contains(prompt.String(), "Select project") {
+		t.Fatalf("expected prompt, got %q", prompt.String())
 	}
 }
 
-func TestSelectCancelsOnEmptyInput(t *testing.T) {
+func TestSelectReturnsDefaultChoiceOnEnter(t *testing.T) {
 	projects := []config.Project{
 		{Name: "one", Path: "/tmp/one"},
 		{Name: "two", Path: "/tmp/two"},
 	}
 
-	_, ok, err := Select(projects, strings.NewReader("\n"), &bytes.Buffer{})
+	got, ok, err := Select(projects, strings.NewReader("\n"), &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("select project: %v", err)
 	}
-	if ok {
-		t.Fatal("expected cancelled selection")
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[0] {
+		t.Fatalf("expected %#v, got %#v", projects[0], got)
 	}
 }
 
-func TestSelectReturnsNumberedChoice(t *testing.T) {
+func TestSelectReturnsChoiceWithArrowKeys(t *testing.T) {
 	projects := []config.Project{
 		{Name: "one", Path: "/tmp/one"},
 		{Name: "two", Path: "/tmp/two"},
 	}
 
-	got, ok, err := Select(projects, strings.NewReader("2\n"), &bytes.Buffer{})
+	got, ok, err := Select(projects, strings.NewReader("\x1b[B\r"), &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("select project: %v", err)
 	}
@@ -205,13 +208,87 @@ func TestSelectReturnsNumberedChoice(t *testing.T) {
 	}
 }
 
-func TestSelectRejectsInvalidNumber(t *testing.T) {
+func TestSelectMovesSelectionUpAndDown(t *testing.T) {
+	projects := []config.Project{
+		{Name: "one", Path: "/tmp/one"},
+		{Name: "two", Path: "/tmp/two"},
+		{Name: "three", Path: "/tmp/three"},
+	}
+
+	got, ok, err := Select(projects, strings.NewReader("\x1b[B\x1b[B\x1b[A\r"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[1] {
+		t.Fatalf("expected %#v, got %#v", projects[1], got)
+	}
+}
+
+func TestSelectCancelsOnEscape(t *testing.T) {
 	projects := []config.Project{
 		{Name: "one", Path: "/tmp/one"},
 		{Name: "two", Path: "/tmp/two"},
 	}
 
-	if _, _, err := Select(projects, strings.NewReader("3\n"), &bytes.Buffer{}); err == nil {
-		t.Fatal("expected invalid selection error")
+	_, ok, err := Select(projects, strings.NewReader("\x1b"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if ok {
+		t.Fatal("expected cancelled selection")
+	}
+}
+
+func TestSelectCancelsOnCtrlC(t *testing.T) {
+	projects := []config.Project{
+		{Name: "one", Path: "/tmp/one"},
+		{Name: "two", Path: "/tmp/two"},
+	}
+
+	_, ok, err := Select(projects, strings.NewReader("\x03"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if ok {
+		t.Fatal("expected cancelled selection")
+	}
+}
+
+func TestRenderSelectionRerenderReturnsToLineStartAndClearsEveryLine(t *testing.T) {
+	projects := []config.Project{
+		{Name: "one", Path: "/tmp/one"},
+		{Name: "two", Path: "/tmp/two"},
+	}
+
+	var prompt bytes.Buffer
+	lines := renderSelection(&prompt, projects, 1, 4)
+
+	if lines != 4 {
+		t.Fatalf("expected stable rendered line count 4, got %d", lines)
+	}
+
+	want := "\r\x1b[4A" +
+		"\r\x1b[2KSelect project:\r\n" +
+		"\r\x1b[2K  one\t/tmp/one\r\n" +
+		"\r\x1b[2K> two\t/tmp/two\r\n" +
+		"\r\x1b[2KUse Up/Down to move, Enter to select, Esc/Ctrl+C to cancel.\r\n"
+	if prompt.String() != want {
+		t.Fatalf("unexpected rerender output:\nwant %q\ngot  %q", want, prompt.String())
+	}
+}
+
+func TestFitTerminalLineTruncatesLongLines(t *testing.T) {
+	got := fitTerminalLine("> project-name\t/some/very/long/path", 16)
+	want := "> project-nam..."
+
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+	if len(got) > 16 {
+		t.Fatalf("expected truncated line to fit width, got length %d", len(got))
 	}
 }

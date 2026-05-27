@@ -176,6 +176,9 @@ func pickProject(cmd *cobra.Command, options rootOptions, query string) (config.
 		if len(projects) == 0 {
 			return config.Project{}, false, fmt.Errorf("no project matches query: %s", query)
 		}
+		if len(projects) == 1 {
+			return projects[0], true, nil
+		}
 	}
 	return project.Select(projects, cmd.InOrStdin(), cmd.ErrOrStderr())
 }
