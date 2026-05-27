@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/faustine8/my-power-toys/internal/config"
 	"github.com/faustine8/my-power-toys/internal/opener"
@@ -144,11 +145,16 @@ func newRemoveCommand(options rootOptions) *cobra.Command {
 
 func newPickCommand(options rootOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "pick",
-		Short: "Select a project and print its path",
-		Args:  cobra.NoArgs,
+		Use:   "pick [query]",
+		Short: "Select or search a project and print its path",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			selected, ok, err := selectProject(cmd, options)
+			query := ""
+			if len(args) == 1 {
+				query = args[0]
+			}
+
+			selected, ok, err := pickProject(cmd, options, query)
 			if err != nil {
 				return err
 			}
@@ -158,6 +164,20 @@ func newPickCommand(options rootOptions) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func pickProject(cmd *cobra.Command, options rootOptions, query string) (config.Project, bool, error) {
+	projects, err := loadProjects(options)
+	if err != nil {
+		return config.Project{}, false, err
+	}
+	if strings.TrimSpace(query) != "" {
+		projects = project.Search(projects, query)
+		if len(projects) == 0 {
+			return config.Project{}, false, fmt.Errorf("no project matches query: %s", query)
+		}
+	}
+	return project.Select(projects, cmd.InOrStdin(), cmd.ErrOrStderr())
 }
 
 func newOpenCodeCommand(options rootOptions) *cobra.Command {
@@ -179,15 +199,23 @@ func newOpenCodeCommand(options rootOptions) *cobra.Command {
 }
 
 func selectProject(cmd *cobra.Command, options rootOptions) (config.Project, bool, error) {
-	store, err := storeFor(options)
+	projects, err := loadProjects(options)
 	if err != nil {
 		return config.Project{}, false, err
+	}
+	return project.Select(projects, cmd.InOrStdin(), cmd.ErrOrStderr())
+}
+
+func loadProjects(options rootOptions) ([]config.Project, error) {
+	store, err := storeFor(options)
+	if err != nil {
+		return nil, err
 	}
 	file, err := store.Load()
 	if err != nil {
-		return config.Project{}, false, err
+		return nil, err
 	}
-	return project.Select(project.List(file), cmd.InOrStdin(), cmd.ErrOrStderr())
+	return project.List(file), nil
 }
 
 func storeFor(options rootOptions) (config.Store, error) {

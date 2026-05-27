@@ -61,6 +61,22 @@ func List(file config.File) []config.Project {
 	return projects
 }
 
+func Search(projects []config.Project, query string) []config.Project {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return append([]config.Project(nil), projects...)
+	}
+
+	matches := make([]config.Project, 0, len(projects))
+	for _, project := range projects {
+		if strings.Contains(strings.ToLower(project.Name), query) ||
+			strings.Contains(strings.ToLower(project.Path), query) {
+			matches = append(matches, project)
+		}
+	}
+	return matches
+}
+
 func Select(projects []config.Project, input io.Reader, prompt io.Writer) (config.Project, bool, error) {
 	if len(projects) == 0 {
 		return config.Project{}, false, nil

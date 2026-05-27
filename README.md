@@ -23,8 +23,11 @@ po list
 # Remove a project by name
 po remove my-project
 
-# Pick a project and print only its path
+# Pick a project interactively and print only its path
 po pick
+
+# Search for a project and print only its path
+po pick my-project
 
 # Pick a project and start opencode in that directory
 po oc
@@ -33,19 +36,21 @@ po oc
 po version
 ```
 
-## Shell Function
+## Shell Integration
 
-`po pick` writes prompts to stderr and prints only the selected path to stdout, so it can be used from a shell function:
+`po pick` writes prompts to stderr and prints only the selected path to stdout, so it can be used from a zsh/bash shell function:
 
 ```sh
-p() {
+pcd() {
   local dir
-  dir="$(po pick)"
-  if [ -n "$dir" ]; then
-    cd "$dir"
-  fi
+  dir="$(po pick "$@")" || return
+  [ -n "$dir" ] && cd "$dir"
 }
 ```
+
+For example, `pcd my-project` searches registered projects and changes into the matched directory.
+
+A Go binary cannot change the current directory of its parent shell directly. `po pick` prints the selected path, and the shell function performs `cd "$dir"` in the current shell process.
 
 ## Storage
 

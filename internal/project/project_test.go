@@ -109,6 +109,48 @@ func TestRemoveRejectsMissingProject(t *testing.T) {
 	}
 }
 
+func TestSearchMatchesProjectName(t *testing.T) {
+	projects := []config.Project{
+		{Name: "my-power-toys", Path: "/tmp/tools"},
+		{Name: "other", Path: "/tmp/other"},
+	}
+
+	got := Search(projects, "POWER")
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(got))
+	}
+	if got[0].Name != "my-power-toys" {
+		t.Fatalf("expected my-power-toys match, got %#v", got[0])
+	}
+}
+
+func TestSearchMatchesProjectPath(t *testing.T) {
+	projects := []config.Project{
+		{Name: "tools", Path: "/home/me/dev/my-power-toys"},
+		{Name: "other", Path: "/home/me/dev/other"},
+	}
+
+	got := Search(projects, "power-toys")
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(got))
+	}
+	if got[0].Path != "/home/me/dev/my-power-toys" {
+		t.Fatalf("expected path match, got %#v", got[0])
+	}
+}
+
+func TestSearchTrimsQuery(t *testing.T) {
+	projects := []config.Project{{Name: "tools", Path: "/tmp/tools"}}
+
+	got := Search(projects, "  tools  ")
+
+	if len(got) != 1 {
+		t.Fatalf("expected trimmed query to match, got %d", len(got))
+	}
+}
+
 func TestSelectReturnsOnlyProjectWithoutPrompt(t *testing.T) {
 	projects := []config.Project{{Name: "only", Path: "/tmp/only"}}
 	var prompt bytes.Buffer

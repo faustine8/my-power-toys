@@ -114,6 +114,89 @@ func TestPickCommandPrintsOnlySelectedPathToStdout(t *testing.T) {
 	}
 }
 
+func TestPickCommandWithQueryPrintsOnlyMatchedPathToStdout(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "projects.json")
+	store := config.Store{Path: storePath}
+	projects := []config.Project{
+		{Name: "my-power-toys", Path: "/tmp/my-power-toys"},
+		{Name: "other", Path: "/tmp/other"},
+	}
+	if err := store.Save(config.File{Version: 1, Projects: projects}); err != nil {
+		t.Fatalf("save fixture: %v", err)
+	}
+
+	stdout, stderr, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "", "pick", "my-power-toys")
+	if err != nil {
+		t.Fatalf("pick command: %v", err)
+	}
+
+	if stdout != "/tmp/my-power-toys\n" {
+		t.Fatalf("expected stdout to contain only matched path, got %q", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("expected no stderr for single query match, got %q", stderr)
+	}
+}
+
+func TestPickCommandWithQueryUsesFilteredSelectorForMultipleMatches(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "projects.json")
+	store := config.Store{Path: storePath}
+	projects := []config.Project{
+		{Name: "alpha-api", Path: "/tmp/alpha-api"},
+		{Name: "alpha-web", Path: "/tmp/alpha-web"},
+		{Name: "beta", Path: "/tmp/beta"},
+	}
+	if err := store.Save(config.File{Version: 1, Projects: projects}); err != nil {
+		t.Fatalf("save fixture: %v", err)
+	}
+
+	stdout, stderr, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "2\n", "pick", "alpha")
+	if err != nil {
+		t.Fatalf("pick command: %v", err)
+	}
+
+	if stdout != "/tmp/alpha-web\n" {
+		t.Fatalf("expected stdout to contain only selected filtered path, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "Select project") {
+		t.Fatalf("expected prompt on stderr, got %q", stderr)
+	}
+	if strings.Contains(stderr, "beta") {
+		t.Fatalf("expected filtered prompt to exclude beta, got %q", stderr)
+	}
+}
+
+func TestPickCommandWithQueryReturnsClearErrorWhenNoProjectsMatch(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "projects.json")
+	store := config.Store{Path: storePath}
+	if err := store.Save(config.File{
+		Version: 1,
+		Projects: []config.Project{
+			{Name: "one", Path: "/tmp/one"},
+		},
+	}); err != nil {
+		t.Fatalf("save fixture: %v", err)
+	}
+
+	stdout, _, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "", "pick", "missing")
+	if err == nil {
+		t.Fatal("expected missing project error")
+	}
+	if stdout != "" {
+		t.Fatalf("expected no stdout on error, got %q", stdout)
+	}
+	if !strings.Contains(err.Error(), "no project matches query: missing") {
+		t.Fatalf("expected clear no-match error, got %v", err)
+	}
+}
+
+func TestPickCommandAcceptsAtMostOneQueryArgument(t *testing.T) {
+	_, _, err := executeTestCommand(t, rootOptions{}, "", "pick", "one", "two")
+	if err == nil {
+		t.Fatal("expected maximum args error")
+	}
+}
+
 func TestOpenCodeCommandRunsWithSelectedProjectPath(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "projects.json")
 	store := config.Store{Path: storePath}
