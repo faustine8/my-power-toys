@@ -273,11 +273,38 @@ func TestRenderSelectionRerenderReturnsToLineStartAndClearsEveryLine(t *testing.
 
 	want := "\r\x1b[4A" +
 		"\r\x1b[2KSelect project:\r\n" +
-		"\r\x1b[2K  one\t/tmp/one\r\n" +
-		"\r\x1b[2K> two\t/tmp/two\r\n" +
+		"\r\x1b[2K  one  /tmp/one\r\n" +
+		"\r\x1b[2K> two  /tmp/two\r\n" +
 		"\r\x1b[2KUse Up/Down to move, Enter to select, Esc/Ctrl+C to cancel.\r\n"
 	if prompt.String() != want {
 		t.Fatalf("unexpected rerender output:\nwant %q\ngot  %q", want, prompt.String())
+	}
+}
+
+func TestRenderProjectRowsAlignsPaths(t *testing.T) {
+	projects := []config.Project{
+		{Name: "a", Path: "/tmp/a"},
+		{Name: "long-project-name", Path: "/tmp/long"},
+		{Name: "mid", Path: "/tmp/mid"},
+	}
+
+	rows := renderProjectRows(projects, 1)
+
+	if len(rows) != len(projects) {
+		t.Fatalf("expected %d rows, got %d", len(projects), len(rows))
+	}
+	wantPathColumn := strings.Index(rows[0], projects[0].Path)
+	if wantPathColumn < 0 {
+		t.Fatalf("expected first row to contain path, got %q", rows[0])
+	}
+	for i, row := range rows {
+		gotPathColumn := strings.Index(row, projects[i].Path)
+		if gotPathColumn != wantPathColumn {
+			t.Fatalf("expected path column %d for row %q, got %d", wantPathColumn, row, gotPathColumn)
+		}
+	}
+	if !strings.HasPrefix(rows[1], "> long-project-name") {
+		t.Fatalf("expected selected row to keep cursor, got %q", rows[1])
 	}
 }
 

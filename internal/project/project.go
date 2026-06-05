@@ -2,12 +2,14 @@ package project
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/faustine8/my-power-toys/internal/config"
 	"golang.org/x/term"
@@ -167,17 +169,32 @@ func renderSelection(prompt io.Writer, projects []config.Project, selected int, 
 	lines := 0
 	renderTerminalLine(prompt, "Select project:", width)
 	lines++
-	for i, project := range projects {
-		cursor := " "
-		if i == selected {
-			cursor = ">"
-		}
-		renderTerminalLine(prompt, fmt.Sprintf("%s %s\t%s", cursor, project.Name, project.Path), width)
+	for _, line := range renderProjectRows(projects, selected) {
+		renderTerminalLine(prompt, line, width)
 		lines++
 	}
 	renderTerminalLine(prompt, "Use Up/Down to move, Enter to select, Esc/Ctrl+C to cancel.", width)
 	lines++
 	return lines
+}
+
+func renderProjectRows(projects []config.Project, selected int) []string {
+	var buffer bytes.Buffer
+	writer := tabwriter.NewWriter(&buffer, 0, 0, 2, ' ', 0)
+	for i, project := range projects {
+		cursor := " "
+		if i == selected {
+			cursor = ">"
+		}
+		fmt.Fprintf(writer, "%s %s\t%s\n", cursor, project.Name, project.Path)
+	}
+	_ = writer.Flush()
+
+	output := strings.TrimSuffix(buffer.String(), "\n")
+	if output == "" {
+		return nil
+	}
+	return strings.Split(output, "\n")
 }
 
 func terminalWidth(output io.Writer) int {
