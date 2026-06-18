@@ -387,6 +387,81 @@ func TestSelectCancelsOnCtrlC(t *testing.T) {
 	}
 }
 
+func TestSelectDownWrapsToFirst(t *testing.T) {
+	projects := []config.Project{
+		{Name: "one", Path: "/tmp/one"},
+		{Name: "two", Path: "/tmp/two"},
+		{Name: "three", Path: "/tmp/three"},
+	}
+
+	// Down x3 wraps from last to first, then Enter selects first
+	got, ok, err := Select(projects, strings.NewReader("\x1b[B\x1b[B\x1b[B\r"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[0] {
+		t.Fatalf("expected %#v, got %#v", projects[0], got)
+	}
+}
+
+func TestSelectUpWrapsToLast(t *testing.T) {
+	projects := []config.Project{
+		{Name: "one", Path: "/tmp/one"},
+		{Name: "two", Path: "/tmp/two"},
+		{Name: "three", Path: "/tmp/three"},
+	}
+
+	// Up from first wraps to last, then Enter selects last
+	got, ok, err := Select(projects, strings.NewReader("\x1b[A\r"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[2] {
+		t.Fatalf("expected %#v, got %#v", projects[2], got)
+	}
+}
+
+func TestSelectCircularNavigationWithFilter(t *testing.T) {
+	projects := []config.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+		{Name: "common-api", Path: "/tmp/common-api"},
+		{Name: "common-web", Path: "/tmp/common-web"},
+	}
+
+	// Type "comm" to filter to 2 results, then Down x2 wraps back to first
+	got, ok, err := Select(projects, strings.NewReader("comm\x1b[B\x1b[B\r"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[1] {
+		t.Fatalf("expected %#v, got %#v", projects[1], got)
+	}
+}
+
+func TestSelectNoMatchesUpDownDoNotPanic(t *testing.T) {
+	projects := []config.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+	}
+
+	// Type "zzz" (no match), then press Down, Up, Enter (no-ops), then Escape to cancel
+	_, ok, err := Select(projects, strings.NewReader("zzz\x1b[B\x1b[A\r\x1b"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if ok {
+		t.Fatal("expected no selection")
+	}
+}
+
 func TestRenderSelectionRerenderReturnsToLineStartAndClearsEveryLine(t *testing.T) {
 	projects := []config.Project{
 		{Name: "one", Path: "/tmp/one"},

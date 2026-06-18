@@ -117,13 +117,13 @@ func Select(projects []config.Project, input io.Reader, prompt io.Writer) (confi
 
 		switch key {
 		case selectionKeyUp:
-			if selected > 0 {
-				selected--
+			if n := len(filtered); n > 0 {
+				selected = (selected - 1 + n) % n
 				renderedLines = renderSelection(prompt, query, filtered, selected, renderedLines)
 			}
 		case selectionKeyDown:
-			if selected < len(filtered)-1 {
-				selected++
+			if n := len(filtered); n > 0 {
+				selected = (selected + 1) % n
 				renderedLines = renderSelection(prompt, query, filtered, selected, renderedLines)
 			}
 		case selectionKeyEnter:
