@@ -207,11 +207,35 @@ func TestPickCommandCancelsWithoutStdout(t *testing.T) {
 	}
 
 	stdout, _, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "\x1b", "pick")
-	if err != nil {
-		t.Fatalf("pick command: %v", err)
+	if err == nil {
+		t.Fatal("expected cancel error")
 	}
 	if stdout != "" {
 		t.Fatalf("expected no stdout on cancel, got %q", stdout)
+	}
+}
+
+func TestPickCommandFiltersInteractively(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "projects.json")
+	store := config.Store{Path: storePath}
+	projects := []config.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+		{Name: "common-api", Path: "/tmp/common-api"},
+		{Name: "common-web", Path: "/tmp/common-web"},
+	}
+	if err := store.Save(config.File{Version: 1, Projects: projects}); err != nil {
+		t.Fatalf("save fixture: %v", err)
+	}
+
+	stdout, stderr, err := executeTestCommand(t, rootOptions{StorePath: storePath}, "comm\x1b[B\r", "pick")
+	if err != nil {
+		t.Fatalf("pick command: %v", err)
+	}
+	if stdout != "/tmp/common-web\n" {
+		t.Fatalf("expected stdout to contain only selected path, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "Filter: comm") {
+		t.Fatalf("expected filter prompt on stderr, got %q", stderr)
 	}
 }
 

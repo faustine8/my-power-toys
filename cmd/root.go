@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,8 @@ import (
 
 // Version is set at build time or defaults to "dev".
 var Version = "dev"
+
+var errPickCancelled = errors.New("project selection cancelled")
 
 type rootOptions struct {
 	StorePath   string
@@ -160,8 +163,9 @@ func newPickCommand(options rootOptions) *cobra.Command {
 			}
 			if ok {
 				fmt.Fprintln(cmd.OutOrStdout(), selected.Path)
+				return nil
 			}
-			return nil
+			return errPickCancelled
 		},
 	}
 }

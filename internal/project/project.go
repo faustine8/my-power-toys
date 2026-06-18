@@ -69,14 +69,18 @@ func Search(projects []config.Project, query string) []config.Project {
 		return append([]config.Project(nil), projects...)
 	}
 
-	matches := make([]config.Project, 0, len(projects))
+	nameMatches := make([]config.Project, 0, len(projects))
+	pathMatches := make([]config.Project, 0, len(projects))
 	for _, project := range projects {
-		if strings.Contains(strings.ToLower(project.Name), query) ||
-			strings.Contains(strings.ToLower(project.Path), query) {
-			matches = append(matches, project)
+		if strings.Contains(strings.ToLower(project.Name), query) {
+			nameMatches = append(nameMatches, project)
+			continue
+		}
+		if strings.Contains(strings.ToLower(project.Path), query) {
+			pathMatches = append(pathMatches, project)
 		}
 	}
-	return matches
+	return append(nameMatches, pathMatches...)
 }
 
 func Select(projects []config.Project, input io.Reader, prompt io.Writer) (config.Project, bool, error) {
@@ -94,8 +98,10 @@ func Select(projects []config.Project, input io.Reader, prompt io.Writer) (confi
 	defer restore()
 
 	reader := bufio.NewReader(input)
+	query := ""
+	filtered := Search(projects, query)
 	selected := 0
-	renderedLines := renderSelection(prompt, projects, selected, 0)
+	renderedLines := renderSelection(prompt, query, filtered, selected, 0)
 
 	for {
 		key, err := readSelectionKey(reader)
@@ -110,17 +116,41 @@ func Select(projects []config.Project, input io.Reader, prompt io.Writer) (confi
 		case selectionKeyUp:
 			if selected > 0 {
 				selected--
-				renderedLines = renderSelection(prompt, projects, selected, renderedLines)
+				renderedLines = renderSelection(prompt, query, filtered, selected, renderedLines)
 			}
 		case selectionKeyDown:
-			if selected < len(projects)-1 {
+			if selected < len(filtered)-1 {
 				selected++
-				renderedLines = renderSelection(prompt, projects, selected, renderedLines)
+				renderedLines = renderSelection(prompt, query, filtered, selected, renderedLines)
 			}
 		case selectionKeyEnter:
-			return projects[selected], true, nil
+			if len(filtered) > 0 {
+				return filtered[selected], true, nil
+			}
 		case selectionKeyCancel:
 			return config.Project{}, false, nil
+		case selectionKeyBackspace:
+			if query != "" {
+				runes := []rune(query)
+				query = string(runes[:len(runes)-1])
+				filtered = Search(projects, query)
+				selected = clampSelection(selected, len(filtered))
+				renderedLines = renderSelection(prompt, query, filtered, selected, renderedLines)
+			}
+		case selectionKeyClearQuery:
+			if query != "" {
+				query = ""
+				filtered = Search(projects, query)
+				selected = 0
+				renderedLines = renderSelection(prompt, query, filtered, selected, renderedLines)
+			}
+		default:
+			if key.isPrintable() {
+				query += string(rune(key))
+				filtered = Search(projects, query)
+				selected = clampSelection(selected, len(filtered))
+				renderedLines = renderSelection(prompt, query, filtered, selected, renderedLines)
+			}
 		}
 	}
 }
@@ -133,7 +163,23 @@ const (
 	selectionKeyDown
 	selectionKeyEnter
 	selectionKeyCancel
+	selectionKeyBackspace
+	selectionKeyClearQuery
 )
+
+func (key selectionKey) isPrintable() bool {
+	return key >= 0x20 && key != 0x7f
+}
+
+func clampSelection(selected int, projectCount int) int {
+	if projectCount == 0 || selected < 0 {
+		return 0
+	}
+	if selected >= projectCount {
+		return projectCount - 1
+	}
+	return selected
+}
 
 type fileDescriptor interface {
 	Fd() uintptr
@@ -159,7 +205,7 @@ func makeInputRaw(input io.Reader) (func(), error) {
 	}, nil
 }
 
-func renderSelection(prompt io.Writer, projects []config.Project, selected int, previousLines int) int {
+func renderSelection(prompt io.Writer, query string, projects []config.Project, selected int, previousLines int) int {
 	if previousLines > 0 {
 		fmt.Fprint(prompt, "\r")
 		fmt.Fprintf(prompt, "\x1b[%dA", previousLines)
@@ -169,12 +215,23 @@ func renderSelection(prompt io.Writer, projects []config.Project, selected int, 
 	lines := 0
 	renderTerminalLine(prompt, "Select project:", width)
 	lines++
-	for _, line := range renderProjectRows(projects, selected) {
-		renderTerminalLine(prompt, line, width)
+	renderTerminalLine(prompt, "Filter: "+query, width)
+	lines++
+	if len(projects) == 0 {
+		renderTerminalLine(prompt, "No matched projects", width)
+		lines++
+	} else {
+		for _, line := range renderProjectRows(projects, selected) {
+			renderTerminalLine(prompt, line, width)
+			lines++
+		}
+	}
+	renderTerminalLine(prompt, "Type to filter, Ctrl+U to clear, Up/Down to move, Enter to select, Esc/Ctrl+C to cancel.", width)
+	lines++
+	for lines < previousLines {
+		renderTerminalLine(prompt, "", width)
 		lines++
 	}
-	renderTerminalLine(prompt, "Use Up/Down to move, Enter to select, Esc/Ctrl+C to cancel.", width)
-	lines++
 	return lines
 }
 
@@ -248,11 +305,18 @@ func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
 		return selectionKeyEnter, nil
 	case 0x03:
 		return selectionKeyCancel, nil
+	case 0x15:
+		return selectionKeyClearQuery, nil
 	case 0x1b:
 		return readEscapeKey(reader)
 	case 0x00, 0xe0:
 		return readWindowsConsoleKey(reader)
+	case 0x7f, 0x08:
+		return selectionKeyBackspace, nil
 	default:
+		if key >= 0x20 {
+			return selectionKey(key), nil
+		}
 		return selectionKeyUnknown, nil
 	}
 }

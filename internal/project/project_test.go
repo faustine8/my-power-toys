@@ -141,6 +141,22 @@ func TestSearchMatchesProjectPath(t *testing.T) {
 	}
 }
 
+func TestSearchPrioritizesProjectNameMatches(t *testing.T) {
+	projects := []config.Project{
+		{Name: "alpha", Path: "/tmp/common-parent/alpha"},
+		{Name: "common-api", Path: "/tmp/common-parent/common-api"},
+	}
+
+	got := Search(projects, "comm")
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 matches, got %d", len(got))
+	}
+	if got[0].Name != "common-api" {
+		t.Fatalf("expected name match first, got %#v", got[0])
+	}
+}
+
 func TestSearchTrimsQuery(t *testing.T) {
 	projects := []config.Project{{Name: "tools", Path: "/tmp/tools"}}
 
@@ -228,6 +244,101 @@ func TestSelectMovesSelectionUpAndDown(t *testing.T) {
 	}
 }
 
+func TestSelectFiltersProjectsByTypedQuery(t *testing.T) {
+	projects := []config.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+		{Name: "common-api", Path: "/tmp/common-api"},
+		{Name: "common-web", Path: "/tmp/common-web"},
+	}
+	var prompt bytes.Buffer
+
+	got, ok, err := Select(projects, strings.NewReader("comm\x1b[B\r"), &prompt)
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[2] {
+		t.Fatalf("expected %#v, got %#v", projects[2], got)
+	}
+	if !strings.Contains(prompt.String(), "Filter: comm") {
+		t.Fatalf("expected filter query in prompt, got %q", prompt.String())
+	}
+}
+
+func TestSelectFiltersByProjectPath(t *testing.T) {
+	projects := []config.Project{
+		{Name: "tools", Path: "/home/me/dev/tools"},
+		{Name: "api", Path: "/home/me/dev/common-api"},
+	}
+
+	got, ok, err := Select(projects, strings.NewReader("COMMON\r"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[1] {
+		t.Fatalf("expected %#v, got %#v", projects[1], got)
+	}
+}
+
+func TestSelectBackspaceUpdatesFilter(t *testing.T) {
+	projects := []config.Project{
+		{Name: "common-api", Path: "/tmp/common-api"},
+		{Name: "command-center", Path: "/tmp/command-center"},
+	}
+
+	got, ok, err := Select(projects, strings.NewReader("commx\x7f\x1b[B\r"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[1] {
+		t.Fatalf("expected %#v, got %#v", projects[1], got)
+	}
+}
+
+func TestSelectCtrlUClearsFilter(t *testing.T) {
+	projects := []config.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+		{Name: "common-api", Path: "/tmp/common-api"},
+	}
+
+	got, ok, err := Select(projects, strings.NewReader("comm\x15\r"), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	if got != projects[0] {
+		t.Fatalf("expected %#v, got %#v", projects[0], got)
+	}
+}
+
+func TestSelectNoMatchesDoesNotSelectOnEnter(t *testing.T) {
+	projects := []config.Project{
+		{Name: "alpha", Path: "/tmp/alpha"},
+	}
+	var prompt bytes.Buffer
+
+	_, ok, err := Select(projects, strings.NewReader("zzz\r\x1b"), &prompt)
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+	if ok {
+		t.Fatal("expected no selection")
+	}
+	if !strings.Contains(prompt.String(), "No matched projects") {
+		t.Fatalf("expected no-match message, got %q", prompt.String())
+	}
+}
+
 func TestSelectCancelsOnEscape(t *testing.T) {
 	projects := []config.Project{
 		{Name: "one", Path: "/tmp/one"},
@@ -265,19 +376,36 @@ func TestRenderSelectionRerenderReturnsToLineStartAndClearsEveryLine(t *testing.
 	}
 
 	var prompt bytes.Buffer
-	lines := renderSelection(&prompt, projects, 1, 4)
+	lines := renderSelection(&prompt, "", projects, 1, 5)
 
-	if lines != 4 {
-		t.Fatalf("expected stable rendered line count 4, got %d", lines)
+	if lines != 5 {
+		t.Fatalf("expected stable rendered line count 5, got %d", lines)
 	}
 
-	want := "\r\x1b[4A" +
+	want := "\r\x1b[5A" +
 		"\r\x1b[2KSelect project:\r\n" +
+		"\r\x1b[2KFilter: \r\n" +
 		"\r\x1b[2K  one  /tmp/one\r\n" +
 		"\r\x1b[2K> two  /tmp/two\r\n" +
-		"\r\x1b[2KUse Up/Down to move, Enter to select, Esc/Ctrl+C to cancel.\r\n"
+		"\r\x1b[2KType to filter, Ctrl+U to clear, Up/Down to move, Enter to select, Esc/Ctrl+C to cancel.\r\n"
 	if prompt.String() != want {
 		t.Fatalf("unexpected rerender output:\nwant %q\ngot  %q", want, prompt.String())
+	}
+}
+
+func TestRenderSelectionClearsStaleLinesWhenFilteredListShrinks(t *testing.T) {
+	projects := []config.Project{
+		{Name: "one", Path: "/tmp/one"},
+	}
+
+	var prompt bytes.Buffer
+	lines := renderSelection(&prompt, "zzz", projects[:0], 0, 5)
+
+	if lines != 5 {
+		t.Fatalf("expected stable rendered line count 5, got %d", lines)
+	}
+	if !strings.Contains(prompt.String(), "No matched projects") {
+		t.Fatalf("expected no-match message, got %q", prompt.String())
 	}
 }
 
