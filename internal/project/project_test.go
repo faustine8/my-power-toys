@@ -187,6 +187,24 @@ func TestSelectPromptsForOnlyProject(t *testing.T) {
 	}
 }
 
+func TestSelectHidesAndRestoresCursor(t *testing.T) {
+	projects := []config.Project{{Name: "one", Path: "/tmp/one"}}
+	var prompt bytes.Buffer
+
+	_, _, err := Select(projects, strings.NewReader("\r"), &prompt)
+	if err != nil {
+		t.Fatalf("select project: %v", err)
+	}
+
+	output := prompt.String()
+	if !strings.HasPrefix(output, "\x1b[?25l") {
+		t.Fatalf("expected cursor hide at start, got prefix %q", output[:min(len(output), 20)])
+	}
+	if !strings.HasSuffix(output, "\x1b[?25h") {
+		t.Fatalf("expected cursor restore at end, got suffix %q", output[max(0, len(output)-20):])
+	}
+}
+
 func TestSelectReturnsDefaultChoiceOnEnter(t *testing.T) {
 	projects := []config.Project{
 		{Name: "one", Path: "/tmp/one"},
@@ -384,12 +402,25 @@ func TestRenderSelectionRerenderReturnsToLineStartAndClearsEveryLine(t *testing.
 
 	want := "\r\x1b[5A" +
 		"\r\x1b[2KSelect project:\r\n" +
-		"\r\x1b[2KFilter: \r\n" +
+		"\r\x1b[2KFilter: \u2588\r\n" +
 		"\r\x1b[2K  one  /tmp/one\r\n" +
 		"\r\x1b[2K> two  /tmp/two\r\n" +
 		"\r\x1b[2KType to filter, Ctrl+U to clear, Up/Down to move, Enter to select, Esc/Ctrl+C to cancel.\r\n"
 	if prompt.String() != want {
 		t.Fatalf("unexpected rerender output:\nwant %q\ngot  %q", want, prompt.String())
+	}
+}
+
+func TestRenderSelectionShowsFakeCursorAfterQuery(t *testing.T) {
+	projects := []config.Project{
+		{Name: "common-api", Path: "/tmp/common-api"},
+	}
+
+	var prompt bytes.Buffer
+	renderSelection(&prompt, "comm", projects, 0, 0)
+
+	if !strings.Contains(prompt.String(), "Filter: comm\u2588") {
+		t.Fatalf("expected fake cursor after query, got %q", prompt.String())
 	}
 }
 

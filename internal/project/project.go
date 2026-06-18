@@ -97,6 +97,9 @@ func Select(projects []config.Project, input io.Reader, prompt io.Writer) (confi
 	}
 	defer restore()
 
+	fmt.Fprint(prompt, "\x1b[?25l")
+	defer fmt.Fprint(prompt, "\x1b[?25h")
+
 	reader := bufio.NewReader(input)
 	query := ""
 	filtered := Search(projects, query)
@@ -215,7 +218,7 @@ func renderSelection(prompt io.Writer, query string, projects []config.Project, 
 	lines := 0
 	renderTerminalLine(prompt, "Select project:", width)
 	lines++
-	renderTerminalLine(prompt, "Filter: "+query, width)
+	renderTerminalLine(prompt, "Filter: "+query+"\u2588", width)
 	lines++
 	if len(projects) == 0 {
 		renderTerminalLine(prompt, "No matched projects", width)
